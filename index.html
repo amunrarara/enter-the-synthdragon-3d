@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enter The SynthDragon 3D</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            pointer-events: none;
+        }
+
+        #speedMeter {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #ff00ff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px #ff00ff, inset 0 0 10px #ff00ff;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        #speedBar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(to right, #00ffff, #ff00ff);
+            box-shadow: 0 0 15px #ff00ff;
+            transition: width 0.2s, background 0.5s;
+        }
+
+        #speedText {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-family: "Courier New", monospace;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 5px #00ffff;
+            pointer-events: none;
+            transition: color 0.5s, text-shadow 0.5s;
+        }
+
+        #boostMeter {
+            position: absolute;
+            bottom: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 15px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px #00ffff, inset 0 0 5px #00ffff;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        #boostBar {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(to right, #00ffff, #33ffff);
+            box-shadow: 0 0 10px #00ffff;
+            transition: width 0.3s;
+        }
+
+        #boostText {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-family: "Courier New", monospace;
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 0 0 3px #00ffff;
+            pointer-events: none;
+        }
+
+        /* Max speed animation effects */
+        @keyframes pulseGold {
+            0% {
+                box-shadow: 0 0 15px #ffcc00, inset 0 0 15px #ffcc00;
+                border-color: #ffcc00;
+            }
+
+            50% {
+                box-shadow: 0 0 30px #ffcc00, inset 0 0 20px #ffcc00;
+                border-color: #ffdd33;
+            }
+
+            100% {
+                box-shadow: 0 0 15px #ffcc00, inset 0 0 15px #ffcc00;
+                border-color: #ffcc00;
+            }
+        }
+
+        @keyframes textPulse {
+            0% {
+                color: #ffcc00;
+                text-shadow: 0 0 5px #ffcc00;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            50% {
+                color: #ffffff;
+                text-shadow: 0 0 10px #ffcc00;
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+
+            100% {
+                color: #ffcc00;
+                text-shadow: 0 0 5px #ffcc00;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .max-speed {
+            animation: pulseGold 1s infinite;
+            border-color: #ffcc00 !important;
+        }
+
+        .max-speed #speedBar {
+            background: linear-gradient(to right, #00ccff, #ff00ff, #ffcc00) !important;
+            box-shadow: 0 0 30px #ffcc00 !important;
+        }
+
+        .max-speed #speedText {
+            animation: textPulse 1.5s infinite;
+            font-weight: bold;
+        }
+
+        .boosting #boostBar {
+            background: linear-gradient(to right, #00ffff, #ffffff);
+            box-shadow: 0 0 15px #00ffff;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">
+        ←→ or A/D or H/L to steer • ↑↓ or W/S or K/J to control speed<br>
+        Hold Shift to boost • Space to jump
+        <div>Score: <span id="score">0</span></div>
+    </div>
+    <div id="speedMeter">
+        <div id="speedBar"></div>
+        <div id="speedText">SPEED: 20%</div>
+    </div>
+    <div id="boostMeter">
+        <div id="boostBar"></div>
+        <div id="boostText">BOOST</div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game variables
+        let scene, camera, renderer, motorcycle;
+        let trailGeometry, trailMaterial, trail;
+        let trailPoints = [];
+        let floorPlanes = [];
+        let obstacles = [];
+        let score = 0;
+
+        // Player position
+        const playerState = {
+            x: 0,
+            y: 0,
+            z: -5,
+            jumping: false,
+            jumpStart: 0
+        };
+
+        // Key state tracking
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            ArrowUp: false,
+            ArrowDown: false,
+            Shift: false,
+            // Add alternative controls
+            a: false, // Left (WASD)
+            d: false, // Right (WASD)
+            w: false, // Up (WASD)
+            s: false, // Down (WASD)
+            h: false, // Left (Vim)
+            l: false, // Right (Vim)
+            j: false, // Down (Vim)
+            k: false, // Up (Vim)
+            ' ': false // Spacebar
+        };
+
+        // Core game settings - adjust these to change game feel
+        const movementSettings = {
+            normalTurnSpeed: 0.175,
+            fastTurnSpeed: 0.44,
+            jumpHeight: 2.5,
+            jumpDuration: 1200,
+            baseGridSpeed: 0.2,
+            minGridSpeed: 0,
+            maxGridSpeed: 0.648,
+            speedChangeFactor: 0.005,
+            boundaryWidth: 10,
+            trailLength: 100,
+            obstacleInterval: 2000,
+            gridSize: 40,
+            gridSpacing: 20,
+            boostMultiplier: 1.5,
+            boostAcceleration: 0.15,
+            boostDeceleration: 0.05,
+            boostDrainRate: 1.575,   // 80% faster than before
+            boostRechargeRate: 0.2
+        };
+
+        // Game state
+        const gameState = {
+            currentTurnSpeed: movementSettings.normalTurnSpeed,
+            currentGridSpeed: movementSettings.baseGridSpeed * 0.2, // Start at 20% speed
+            targetGridSpeed: movementSettings.baseGridSpeed * 0.2,  // Target speed without boost
+            speedMultiplier: 1.0,     // Used for obstacle collisions
+            boostAmount: 100,         // Boost resource (0-100)
+            isBoosting: false         // Whether boost is currently active
+        };
+
+        // Colors
+        const colors = {
+            background: 0x000000,
+            grid: 0xff00ff,
+            motorcycle: 0x00ffff,
+            trail: 0xff00ff,
+            obstacles: 0xff3366
+        };
+
+        // Initialize the scene
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(colors.background);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 6, 3);
+            camera.lookAt(0, 0, -10);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            scene.fog = new THREE.Fog(0x110022, 5, 50);
+
+            const ambientLight = new THREE.AmbientLight(0x666666);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xff9999, 1);
+            directionalLight.position.set(0, 10, -5);
+            scene.add(directionalLight);
+
+            createGrids();
+            createMotorcycle();
+            createTrail();
+
+            // Initialize UI
+            updateSpeedMeter();
+            updateBoostMeter();
+
+            window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            setTimeout(addObstacle, movementSettings.obstacleInterval);
+
+            animate();
+        }
+
+        function createGrids() {
+            const textureSize = 1024;
+            const canvas = document.createElement('canvas');
+            canvas.width = textureSize;
+            canvas.height = textureSize;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+            ctx.fillRect(0, 0, textureSize, textureSize);
+
+            // Create the synthwave grid effect
+            const gridColor = '#ff00ff';
+            const glowColor = 'rgba(255, 0, 255, 0.5)';
+            const cellSize = textureSize / movementSettings.gridSpacing;
+
+            // Helper for drawing glowing lines
+            function drawGlowingLine(x1, y1, x2, y2) {
+                // Wider glow layer
+                ctx.strokeStyle = glowColor;
+                ctx.lineWidth = 6;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+
+                // Sharper core line
+                ctx.strokeStyle = gridColor;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+
+            // Draw grid
+            for (let i = 0; i <= movementSettings.gridSpacing; i++) {
+                drawGlowingLine(0, i * cellSize, textureSize, i * cellSize);
+                drawGlowingLine(i * cellSize, 0, i * cellSize, textureSize);
+            }
+
+            // Create texture and material
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(1, 1);
+
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
+            });
+
+            // Create floor planes
+            for (let i = 0; i < 5; i++) {
+                const geometry = new THREE.PlaneGeometry(movementSettings.gridSize, movementSettings.gridSize);
+                const plane = new THREE.Mesh(geometry, material);
+                plane.rotation.x = Math.PI / 2;
+                plane.position.y = -0.5;
+                plane.position.z = -i * movementSettings.gridSize;
+                scene.add(plane);
+
+                floorPlanes.push(plane);
+            }
+        }
+
+        function createMotorcycle() {
+            // Create a simple motorcycle mesh (can be replaced with a more complex model)
+            const geometry = new THREE.ConeGeometry(0.5, 2, 4);
+            const material = new THREE.MeshPhongMaterial({
+                color: colors.motorcycle,
+                emissive: 0x006666,
+                shininess: 100
+            });
+
+            motorcycle = new THREE.Mesh(geometry, material);
+            motorcycle.rotation.x = Math.PI / 2;
+            motorcycle.position.set(playerState.x, playerState.y, playerState.z);
+            scene.add(motorcycle);
+        }
+
+        function createTrail() {
+            // Create trail geometry
+            trailGeometry = new THREE.BufferGeometry();
+            trailMaterial = new THREE.LineBasicMaterial({
+                color: colors.trail,
+                linewidth: 2
+            });
+
+            // Initialize with current position
+            trailPoints.push(
+                new THREE.Vector3(playerState.x, playerState.y - 0.2, playerState.z)
+            );
+
+            trailGeometry.setFromPoints(trailPoints);
+            trail = new THREE.Line(trailGeometry, trailMaterial);
+            scene.add(trail);
+        }
+
+        function updateTrail() {
+            // Add current position to trail
+            if (!playerState.jumping) {
+                trailPoints.push(
+                    new THREE.Vector3(playerState.x, playerState.y - 0.2, playerState.z)
+                );
+
+                // Limit trail length
+                if (trailPoints.length > movementSettings.trailLength) {
+                    trailPoints.shift();
+                }
+
+                // Update trail geometry
+                trailGeometry.setFromPoints(trailPoints);
+            }
+        }
+
+        function addObstacle() {
+            // Random position on the x-axis
+            const x = (Math.random() * movementSettings.boundaryWidth * 2) - movementSettings.boundaryWidth;
+
+            // Create obstacle
+            const geometry = new THREE.BoxGeometry(2, 1, 2);
+            const material = new THREE.MeshPhongMaterial({
+                color: colors.obstacles,
+                emissive: 0x330022
+            });
+
+            const obstacle = new THREE.Mesh(geometry, material);
+            obstacle.position.set(x, 0, -50); // Far away on z-axis
+            scene.add(obstacle);
+
+            obstacles.push(obstacle);
+
+            // Schedule next obstacle
+            setTimeout(addObstacle, Math.random() * 500 + movementSettings.obstacleInterval);
+        }
+
+        function onKeyDown(event) {
+            const key = event.key;
+
+            // Handle special keys with their original casing
+            if (key in keys) {
+                keys[key] = true;
+            }
+
+            // Handle jump inputs (spacebar only now)
+            if (key === ' ' && !playerState.jumping) {
+                playerState.jumping = true;
+                playerState.jumpStart = Date.now();
+            }
+        }
+
+        function onKeyUp(event) {
+            const key = event.key;
+
+            // Update key state to false when released
+            if (key in keys) {
+                keys[key] = false;
+            }
+        }
+
+        function updateMotorcycle() {
+            // Calculate target position based on keys pressed
+            let targetX = playerState.x;
+
+            if ((keys.ArrowLeft || keys.a || keys.h) && playerState.x > -movementSettings.boundaryWidth) {
+                targetX -= movementSettings.normalTurnSpeed * 3;
+            }
+
+            if ((keys.ArrowRight || keys.d || keys.l) && playerState.x < movementSettings.boundaryWidth) {
+                targetX += movementSettings.normalTurnSpeed * 3;
+            }
+
+            // Enforce movement boundaries
+            targetX = Math.max(-movementSettings.boundaryWidth, Math.min(movementSettings.boundaryWidth, targetX));
+
+            // Smooth position interpolation
+            playerState.x = lerp(playerState.x, targetX, movementSettings.normalTurnSpeed);
+            motorcycle.position.x = playerState.x;
+
+            // Handle jumping with modified sine curve for better feel
+            if (playerState.jumping) {
+                const jumpProgress = (Date.now() - playerState.jumpStart) / movementSettings.jumpDuration;
+
+                if (jumpProgress >= 1) {
+                    playerState.jumping = false;
+                    playerState.y = 0;
+                } else {
+                    // Combined curve for natural arc with hang time
+                    const x = jumpProgress * Math.PI;
+                    const baseHeight = Math.sin(x);
+                    const biasTowardTop = Math.pow(Math.sin(x * 0.5), 0.3);
+
+                    playerState.y = movementSettings.jumpHeight * (baseHeight * 0.7 + biasTowardTop * 0.3);
+                }
+            } else {
+                playerState.y = 0;
+            }
+
+            motorcycle.position.y = playerState.y;
+        }
+
+        function updateGrids() {
+            // Handle speed input
+            if (keys.ArrowUp || keys.w || keys.k) {
+                gameState.targetGridSpeed = Math.min(
+                    movementSettings.maxGridSpeed,
+                    gameState.targetGridSpeed + movementSettings.speedChangeFactor
+                );
+            } else if (keys.ArrowDown || keys.s || keys.j) {
+                gameState.targetGridSpeed = Math.max(
+                    movementSettings.minGridSpeed,
+                    gameState.targetGridSpeed - movementSettings.speedChangeFactor
+                );
+            }
+
+            // Handle boost
+            const previousBoostState = gameState.isBoosting;
+            gameState.isBoosting = keys.Shift && gameState.boostAmount > 0;
+
+            // Update boost meter
+            updateBoostMeter();
+
+            // Visual feedback for boost activation/deactivation
+            if (gameState.isBoosting !== previousBoostState) {
+                const boostMeter = document.getElementById('boostMeter');
+                if (gameState.isBoosting) {
+                    boostMeter.classList.add('boosting');
+                } else {
+                    boostMeter.classList.remove('boosting');
+                }
+            }
+
+            // Calculate target speed with boost
+            let targetSpeed = gameState.targetGridSpeed;
+            if (gameState.isBoosting) {
+                targetSpeed *= movementSettings.boostMultiplier;
+
+                // Drain boost resource
+                gameState.boostAmount = Math.max(
+                    0,
+                    gameState.boostAmount - movementSettings.boostDrainRate * (1000 / 60) / 1000
+                );
+
+                // Smoothly accelerate to boosted speed
+                gameState.currentGridSpeed = lerp(
+                    gameState.currentGridSpeed,
+                    targetSpeed,
+                    movementSettings.boostAcceleration
+                );
+            } else {
+                // Recharge boost when not using it
+                gameState.boostAmount = Math.min(
+                    100,
+                    gameState.boostAmount + movementSettings.boostRechargeRate * (1000 / 60) / 1000
+                );
+
+                // Smoothly decelerate to normal speed
+                gameState.currentGridSpeed = lerp(
+                    gameState.currentGridSpeed,
+                    targetSpeed,
+                    movementSettings.boostDeceleration
+                );
+            }
+
+            updateSpeedMeter();
+
+            // Apply speed multiplier from obstacle collisions
+            const effectiveSpeed = gameState.currentGridSpeed * gameState.speedMultiplier;
+
+            // Create infinite grid by recycling planes
+            floorPlanes.forEach(plane => {
+                plane.position.z += effectiveSpeed;
+
+                if (plane.position.z > movementSettings.gridSize) {
+                    plane.position.z -= movementSettings.gridSize * floorPlanes.length;
+                }
+            });
+        }
+
+        function updateBoostMeter() {
+            const boostBar = document.getElementById('boostBar');
+            boostBar.style.width = gameState.boostAmount + '%';
+
+            // Visual feedback for low boost
+            if (gameState.boostAmount < 20) {
+                boostBar.style.opacity = 0.5 + (Math.sin(Date.now() * 0.01) * 0.5);
+            } else {
+                boostBar.style.opacity = 1.0;
+            }
+        }
+
+        function updateSpeedMeter() {
+            // Use current grid speed for display calculation
+            const speedPercent = (gameState.currentGridSpeed / movementSettings.maxGridSpeed) * 100;
+
+            const speedBar = document.getElementById('speedBar');
+            speedBar.style.width = speedPercent + '%';
+
+            const speedText = document.getElementById('speedText');
+            speedText.textContent = 'SPEED: ' + Math.round(speedPercent) + '%';
+
+            const speedMeter = document.getElementById('speedMeter');
+
+            // Special effects for max speed
+            if (speedPercent >= 99.5) {
+                if (!speedMeter.classList.contains('max-speed')) {
+                    speedMeter.classList.add('max-speed');
+                    speedText.textContent = 'MAX SPEED!';
+                }
+            } else {
+                if (speedMeter.classList.contains('max-speed')) {
+                    speedMeter.classList.remove('max-speed');
+                }
+
+                // High-speed effect threshold
+                if (speedPercent > 80) {
+                    speedBar.style.boxShadow = '0 0 20px #ff00ff';
+                } else {
+                    speedBar.style.boxShadow = '0 0 15px #ff00ff';
+                }
+            }
+        }
+
+        function updateObstacles() {
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
+                obstacle.position.z += gameState.currentGridSpeed * gameState.speedMultiplier;
+
+                // Handle collisions
+                if (!playerState.jumping &&
+                    Math.abs(obstacle.position.x - playerState.x) < 1.5 &&
+                    Math.abs(obstacle.position.z - playerState.z) < 1.5) {
+
+                    // Reduce current speed by 30% but don't limit max potential speed
+                    gameState.targetGridSpeed *= 0.7;
+                    gameState.currentGridSpeed = gameState.targetGridSpeed;
+
+                    // Visual feedback for collision
+                    motorcycle.material.emissive.setRGB(0.8, 0, 0);
+                    setTimeout(() => {
+                        motorcycle.material.emissive.setRGB(0, 0.4, 0.4);
+                    }, 1000);
+
+                    // Update speed display to reflect the reduction
+                    updateSpeedMeter();
+
+                    scene.remove(obstacle);
+                    obstacles.splice(i, 1);
+                    continue;
+                }
+
+                // Remove obstacles that pass the camera
+                if (obstacle.position.z > 5) {
+                    scene.remove(obstacle);
+                    obstacles.splice(i, 1);
+
+                    score += 10;
+                    document.getElementById('score').textContent = score;
+                }
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Helper function for linear interpolation
+        function lerp(start, end, t) {
+            return start * (1 - t) + end * t;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updateMotorcycle();
+            updateGrids();
+            updateTrail();
+            updateObstacles();
+
+            renderer.render(scene, camera);
+        }
+
+        // Start the game
+        init();
+    </script>
+</body>
+
+</html>
